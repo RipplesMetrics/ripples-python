@@ -314,30 +314,26 @@ class TestTimestampOverride:
         assert all_events[24]["$sent_at"] == "2024-01-25T00:00:00Z"
 
 
-class TestGroups:
+class TestGroup:
     def setup_method(self):
         self.ripples = Ripples("priv_test")
 
-    def test_group_identify_sends_type_key_and_properties(self):
-        self.ripples.group_identify("company", 42, {"name": "Acme", "seats": 12})
+    def test_group_sends_user_company_and_traits(self):
+        self.ripples.group("u1", 42, name="Acme", seats=12)
         event = self.ripples._queue[0]
         assert event["$type"] == "group"
-        assert event["$group_type"] == "company"
-        assert event["$group_key"] == "42"
-        assert event["$group_properties"] == {"name": "Acme", "seats": 12}
+        assert event["$user_id"] == "u1"
+        assert event["$company_id"] == "42"
+        assert event["$traits"] == {"name": "Acme", "seats": 12}
+
+    def test_group_without_user_only_updates_the_company(self):
+        self.ripples.group(None, "acme")
+        event = self.ripples._queue[0]
         assert "$user_id" not in event
+        assert json.dumps(event["$traits"]) == "{}"
 
-    def test_group_identify_without_properties_sends_an_object(self):
-        self.ripples.group_identify("company", "acme")
-        assert json.dumps(self.ripples._queue[0]["$group_properties"]) == "{}"
-
-    def test_groups_keyword_becomes_the_system_field(self):
-        self.ripples.track("created a report", "u1", groups={"company": "acme"}, area="reports")
-        self.ripples.signup("u2", groups={"company": "acme"})
-        self.ripples.identify("u3", groups={})
-        track, signup, identify = self.ripples._queue
-        assert track["$groups"] == {"company": "acme"}
-        assert "groups" not in track
-        assert track["$area"] == "reports"
-        assert signup["$groups"] == {"company": "acme"}
-        assert "$groups" not in identify and "groups" not in identify
+    def test_company_id_on_other_calls_stays_a_custom_property(self):
+        self.ripples.track("created a report", "u1", company_id="acme")
+        event = self.ripples._queue[0]
+        assert event["company_id"] == "acme"
+        assert "$company_id" not in event
