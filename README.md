@@ -132,6 +132,18 @@ signup "now" instead of the user's real account age, which corrupts your
 signups chart and retention cohorts. It only ever moves the stored signup date
 earlier, never later, so there's no downside to sending it on every call.
 
+## Companies and groups (B2B)
+
+Tie events to the company (or workspace, or team) they happened in. Set the company's properties once, and pass `groups=` on each call that belongs to it:
+
+```python
+ripples.group_identify("company", team.id, {"name": team.name, "plan": "business"})
+
+ripples.track("created a report", user.id, groups={"company": team.id})
+```
+
+Up to five group types per project; use your own id as the key, never the name. Docs: https://ripples.sh/docs/groups
+
 ## Backfill historical events
 
 Pass `timestamp=` to any tracking method to override the event's time — useful when importing from a CSV, replaying from another analytics tool, or catching up after an outage. Accepts a `datetime` (aware or naive — naive is assumed UTC) or an ISO-8601 string.

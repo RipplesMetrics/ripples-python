@@ -170,6 +170,7 @@ class Ripples:
         the browsing session that produced it. Without one it still works, but
         the channel is only recoverable once the browser identifies.
 
+        Pass groups={"company": company_id} to tie it to a company.
         Pass timestamp= to backfill a historical event; omit for "now".
         """
         self._enqueue("signup", {**attributes, "$user_id": user_id}, timestamp=timestamp)
@@ -192,6 +193,7 @@ class Ripples:
 
         Ripples auto-detects activation (first per user per action).
         Pass area= to group into product areas.
+        Pass groups={"company": company_id} to tie it to a company.
         Pass activated=True to flag this specific occurrence as the
         activation moment (not every occurrence of the event type).
         Pass timestamp= to backfill a historical event.
@@ -260,9 +262,46 @@ class Ripples:
     ) -> None:
         """Identify a user (set or update traits).
 
+        Pass groups={"company": company_id} to tie it to a company.
         Pass timestamp= to backdate the identify event; omit for "now".
         """
         self._enqueue("identify", {**attributes, "$user_id": user_id}, timestamp=timestamp)
+
+    def group_identify(
+        self,
+        group_type: str,
+        group_key: str | int,
+        properties: Mapping[str, Any] | None = None,
+        *,
+        timestamp: datetime | str | None = None,
+    ) -> None:
+        """Set or update properties on a group (a company, a workspace, a team).
+
+        Creates the group if Ripples has not seen it yet. Properties merge into
+        what the group already has: a key sent again is overwritten, a key left
+        out is kept. Include a ``name``; the dashboard shows it instead of the key.
+
+        This does not tie any event to the group. Server-side calls carry no
+        state between them, so pass ``groups=`` on each signup / track /
+        identify that belongs to one::
+
+            ripples.track("created a report", user.id, groups={"company": team.id})
+
+        Args:
+            group_type: Singular and lowercase, e.g. ``"company"``. Up to 5 types per project.
+            group_key: Your own id for the group, never its name (names repeat).
+            properties: Group properties, e.g. ``{"name": "Acme", "plan": "pro"}``.
+            timestamp: Override event time; omit for "now".
+        """
+        self._enqueue(
+            "group",
+            {
+                "$group_type": group_type,
+                "$group_key": str(group_key),
+                "$group_properties": dict(properties or {}),
+            },
+            timestamp=timestamp,
+        )
 
     def flush(self) -> None:
         """Send all queued events in a single batch request.
@@ -295,6 +334,13 @@ class Ripples:
         visitor_id = _normalize_visitor_id(
             prefixed or unprefixed or _ambient_visitor_id.get() or self._visitor_id
         )
+
+        # `groups=` is reserved, like `area=`: which company (or workspace...)
+        # the event belongs to, as {"company": "acme_42"}. Sent as the system
+        # field so it can never be read as a custom property.
+        groups = data.pop("groups", None)
+        if isinstance(groups, Mapping) and groups:
+            data["$groups"] = dict(groups)
 
         event = {
             **data,
