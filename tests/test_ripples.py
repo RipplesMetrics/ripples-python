@@ -296,6 +296,23 @@ class TestTimestampOverride:
         self.ripples.subscription("sub_1", "u1", "active", 29.0, timestamp=past)
         assert self.ripples._queue[0]["$sent_at"] == "2024-02-14T15:30:00Z"
 
+    def test_subscription_sends_start_and_cancel_dates(self):
+        self.ripples.subscription(
+            "sub_1", "u1", "canceled", 29.0,
+            started_at=datetime(2021, 1, 5, tzinfo=timezone.utc),
+            canceled_at="2023-05-10T00:00:00Z",
+        )
+        event = self.ripples._queue[0]
+        assert event["subscription_started_at"] == "2021-01-05T00:00:00Z"
+        assert event["subscription_canceled_at"] == "2023-05-10T00:00:00Z"
+        assert "started_at" not in event and "canceled_at" not in event
+
+    def test_subscription_omits_dates_when_absent(self):
+        self.ripples.subscription("sub_1", "u1", "active", 29.0)
+        event = self.ripples._queue[0]
+        assert "subscription_started_at" not in event
+        assert "subscription_canceled_at" not in event
+
     @patch.object(Ripples, "_post")
     def test_backfill_loop_across_auto_flush_boundary(self, mock_post):
         r = Ripples("priv_test", max_queue_size=10)

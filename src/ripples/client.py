@@ -213,6 +213,8 @@ class Ripples:
         interval: str = "month",
         *,
         timestamp: datetime | str | None = None,
+        started_at: datetime | str | None = None,
+        canceled_at: datetime | str | None = None,
         **attributes: Any,
     ) -> None:
         """Track a subscription state change for MRR calculation.
@@ -228,6 +230,9 @@ class Ripples:
             amount: Amount per billing cycle (e.g. 29.00), in your currency.
             interval: Billing interval: month, year, week, or day.
             timestamp: Override event time for backfilling history.
+            started_at: When the subscription started, for importing history.
+            canceled_at: When it was canceled, for importing history. Without
+                it a cancel is dated when Ripples receives it.
             **attributes: Optional: currency, name/plan, interval_count.
         """
         name = attributes.pop("name", attributes.pop("plan", None))
@@ -249,6 +254,10 @@ class Ripples:
             event["currency"] = currency
         if name is not None:
             event["$name"] = name
+        if started_at is not None:
+            event["subscription_started_at"] = _format_timestamp(started_at)
+        if canceled_at is not None:
+            event["subscription_canceled_at"] = _format_timestamp(canceled_at)
         self._enqueue("revenue", event, timestamp=timestamp)
 
     def identify(
