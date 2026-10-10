@@ -313,6 +313,23 @@ class TestTimestampOverride:
         assert "subscription_started_at" not in event
         assert "subscription_canceled_at" not in event
 
+    def test_subscription_sends_renewal_with_false_kept(self):
+        self.ripples.subscription(
+            "sub_1", "u1", "trialing", 9.99,
+            renews=False,
+            period_ends_at=datetime(2026, 10, 14, 8, 10, tzinfo=timezone.utc),
+        )
+        event = self.ripples._queue[0]
+        assert event["subscription_renews"] is False
+        assert event["subscription_period_ends_at"] == "2026-10-14T08:10:00Z"
+        assert "renews" not in event and "period_ends_at" not in event
+
+    def test_subscription_omits_renewal_when_absent(self):
+        self.ripples.subscription("sub_1", "u1", "active", 29.0)
+        event = self.ripples._queue[0]
+        assert "subscription_renews" not in event
+        assert "subscription_period_ends_at" not in event
+
     @patch.object(Ripples, "_post")
     def test_backfill_loop_across_auto_flush_boundary(self, mock_post):
         r = Ripples("priv_test", max_queue_size=10)

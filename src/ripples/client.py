@@ -215,6 +215,8 @@ class Ripples:
         timestamp: datetime | str | None = None,
         started_at: datetime | str | None = None,
         canceled_at: datetime | str | None = None,
+        renews: bool | None = None,
+        period_ends_at: datetime | str | None = None,
         **attributes: Any,
     ) -> None:
         """Track a subscription state change for MRR calculation.
@@ -233,6 +235,12 @@ class Ripples:
             started_at: When the subscription started, for importing history.
             canceled_at: When it was canceled, for importing history. Without
                 it a cancel is dated when Ripples receives it.
+            renews: Will it bill again when the current period ends? Auto-renew
+                off is NOT "canceled" (which means it has ended): send the live
+                status (active / trialing) with renews=False. Omit to keep the
+                last value Ripples was told.
+            period_ends_at: When the current paid or trial period ends — when
+                access ends for a subscription that does not renew.
             **attributes: Optional: currency, name/plan, interval_count.
         """
         name = attributes.pop("name", attributes.pop("plan", None))
@@ -258,6 +266,10 @@ class Ripples:
             event["subscription_started_at"] = _format_timestamp(started_at)
         if canceled_at is not None:
             event["subscription_canceled_at"] = _format_timestamp(canceled_at)
+        if renews is not None:
+            event["subscription_renews"] = bool(renews)
+        if period_ends_at is not None:
+            event["subscription_period_ends_at"] = _format_timestamp(period_ends_at)
         self._enqueue("revenue", event, timestamp=timestamp)
 
     def identify(

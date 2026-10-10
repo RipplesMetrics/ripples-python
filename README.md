@@ -60,9 +60,15 @@ ripples.subscription("sub_123", "user_456", "active", 29.00, "month",
 ripples.subscription("sub_123", "user_456", "active", 499.00, "year",
     name="Business")
 
-# User cancels
+# User turns auto-renew off: NOT a cancel yet, they are paid until the period ends
+ripples.subscription("sub_123", "user_456", "active", 499.00, "year",
+    renews=False, period_ends_at=datetime(2027, 1, 5, tzinfo=timezone.utc))
+
+# The subscription has ended
 ripples.subscription("sub_123", "user_456", "canceled", 0)
 ```
+
+`canceled` means the subscription has ended: MRR drops and churn is dated. Auto-renew off (the App Store and Play switch, Stripe's `cancel_at_period_end`) is the live status with `renews=False`. A trial is `trialing` at the price it will bill at. See [Auto-renew off is not a cancel](https://ripples.sh/docs/php-sdk#subscription-renewal) for the Apple and Play mapping.
 
 Parameters:
 
@@ -74,6 +80,8 @@ Parameters:
 - `currency` (str, optional) — 3-letter currency code
 - `name` / `plan` (str, optional) — plan name shown in the dashboard
 - `interval_count` (int, optional) — billing frequency multiplier (e.g. `3` for quarterly)
+- `renews` (bool, optional) — will it bill again when the current period ends; omit to keep the last value
+- `period_ends_at` (datetime or ISO 8601 str, optional) — when the current paid or trial period ends
 
 ## Track revenue
 
