@@ -45,6 +45,35 @@ Use `area` to group actions into product areas. Use `activated=True` to mark the
 ripples.track("added transaction", "user_123", area="transactions", activated=True)
 ```
 
+## Milestones
+
+A milestone is a moment in a person's lifecycle that you count **once per person**, date by when they first reached it, and attribute to how they were acquired: `mql`, `sql`, `demo_requested`, `demo_held`, `onboarding_completed`, `paywall_viewed`. It is not product usage, so it never feeds activation, retention or "last seen" the way `track()` does.
+
+> Would you put it on a funnel next to *signed up* and *paid*, and count each person once? → `milestone()`.
+> Do people do it repeatedly as part of using the product? → `track()`.
+
+```python
+# A known user: date it by when it happened (the CRM's stage-change time)
+ripples.milestone("mql", "42", timestamp=changed_at, source="hubspot")
+
+# A lead with no account yet: by the bound browser visitor or by email
+ripples.milestone("demo_requested", email=form.email, company_size="50-200")
+```
+
+- Who it belongs to, strongest first: `user_id`, then the browser visitor (`set_visitor_id()` or `visitor_id=`), then `email=`. A milestone naming nobody is not sent and is reported to `on_error`.
+- A lead known by email is merged into the account when you later `identify()` the user with the same email. **Send an email only once it is verified**: it merges that lead's history into whoever owns the address.
+- Names are snake_case. Use the recommended names where they fit (`lead_captured`, `demo_requested`, `demo_booked`, `demo_held`, `mql`, `sql`, `email_verified`, `onboarding_completed`, `integration_connected`, `teammate_invited`, `teammate_joined`, `invite_sent`, `invite_accepted`, `paywall_viewed`, `checkout_started`). Built-in moments (`signed_up`, `activated`, `first_paid`, …) and billing events (`payment_failed`, refunds, renewals) are refused.
+- Sending one again is fine (CRM webhooks re-fire). Reports count each person once, on the day of their first.
+- Every other keyword argument is a property.
+
+HTTP shape (`POST /v1/ingest/batch`):
+
+```json
+{"$type": "milestone", "$name": "mql", "$user_id": "42", "$sent_at": "2026-09-14T10:00:00Z", "$properties": {"source": "hubspot"}}
+```
+
+Docs: https://ripples.sh/docs/milestones
+
 ## Track subscriptions (MRR)
 
 Call `subscription()` when a subscription is created, upgraded, downgraded, or canceled. This powers the MRR metric on your dashboard.

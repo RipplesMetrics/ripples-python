@@ -23,6 +23,9 @@ VISITOR_COOKIE = "_rpl_vid"
 
 _UUID_RE = re.compile(r"^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$", re.IGNORECASE)
 
+# The API's rule for milestone names: they become report columns and filters.
+_MILESTONE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}\Z")
+
 # A ContextVar rather than a module global: the client is normally a singleton
 # shared by every worker thread and every concurrent coroutine, so a plain
 # attribute would leak one request's visitor onto another request's events.
@@ -204,6 +207,70 @@ class Ripples:
             sys_fields["$activated"] = attributes["activated"]
         self._enqueue("track", {**props, **sys_fields}, timestamp=timestamp)
 
+    def milestone(
+        self,
+        name: str,
+        user_id: str | None = None,
+        *,
+        email: str | None = None,
+        visitor_id: str | None = None,
+        timestamp: datetime | str | None = None,
+        **properties: Any,
+    ) -> None:
+        """Record a milestone: a moment in a person's lifecycle that you count
+        once per person and attribute to how they were acquired (mql, sql,
+        demo_requested, demo_held, onboarding_completed, paywall_viewed…).
+
+        Not product usage: milestones never feed activation, retention or
+        "last seen" the way track() does. Would you put it on a funnel next to
+        "signed up" and "paid", and count each person once? Then it is a
+        milestone. Sending one again is fine (CRM webhooks re-fire); reports
+        count each person once, on the day of their first.
+
+        Who it belongs to, strongest first: user_id, else the browser visitor
+        (set_visitor_id() or visitor_id=), else email= for a lead with no
+        account yet, who is merged into the account when you later identify()
+        them with the same email. Send an email only once it is verified: it
+        merges the lead's history into whoever owns that address. A milestone
+        that names nobody is not sent and is reported to on_error.
+
+        Names are snake_case (``^[a-z][a-z0-9_]{0,63}$``). Built-in moments
+        (signed_up, activated, first_paid…) and billing events (payment_failed,
+        refunds, renewals) are refused by the API.
+
+        Pass timestamp= to date it when it really happened (a CRM stage
+        change, a history import); omit for "now". Every other keyword is a
+        property.
+        """
+        if not isinstance(name, str) or not _MILESTONE_NAME_RE.match(name):
+            self._report(RipplesError(
+                f"Milestone name {name!r} is not snake_case (^[a-z][a-z0-9_]{{0,63}}$); not sent."
+            ))
+            return
+
+        email = email.strip() if isinstance(email, str) and email.strip() else None
+        user_id = user_id or None
+        if user_id is None and email is None and _normalize_visitor_id(
+            visitor_id or _ambient_visitor_id.get() or self._visitor_id
+        ) is None:
+            self._report(RipplesError(
+                f"Milestone {name!r} names nobody: pass user_id, visitor_id or email; not sent."
+            ))
+            return
+
+        # Properties ride nested so a property called `email`, `plan` or
+        # `name` stays a property instead of being read as an identity field.
+        data: dict[str, Any] = {"$name": name}
+        if user_id is not None:
+            data["$user_id"] = user_id
+        if email is not None:
+            data["$email"] = email
+        if visitor_id is not None:
+            data["$visitor_id"] = visitor_id
+        if properties:
+            data["$properties"] = properties
+        self._enqueue("milestone", data, timestamp=timestamp)
+
     def subscription(
         self,
         subscription_id: str,
@@ -380,8 +447,12 @@ class Ripples:
         try:
             self._post(path, data)
         except Exception as exc:
-            if self._on_error is not None:
-                self._on_error(exc)
+            self._report(exc)
+
+    def _report(self, exc: Exception) -> None:
+        """Hand a failure to the on_error callback, if one is configured."""
+        if self._on_error is not None:
+            self._on_error(exc)
 
     def _post(self, path: str, data: dict[str, Any]) -> None:
         """Send a POST request. Override in a subclass to swap HTTP clients."""

@@ -371,3 +371,53 @@ class TestGroup:
         event = self.ripples._queue[0]
         assert event["company_id"] == "acme"
         assert "$company_id" not in event
+
+
+class TestMilestone:
+    def setup_method(self):
+        self.errors: list[Exception] = []
+        self.ripples = Ripples("priv_test", on_error=self.errors.append)
+        set_visitor_id(None)
+
+    def teardown_method(self):
+        set_visitor_id(None)
+
+    def test_milestone_with_user_id(self):
+        self.ripples.milestone(
+            "mql", "42",
+            timestamp=datetime(2026, 9, 14, 12, 0, tzinfo=timezone(timedelta(hours=2))),
+            source="hubspot", plan="not-identity",
+        )
+        event = self.ripples._queue[0]
+        assert event["$type"] == "milestone"
+        assert event["$name"] == "mql"
+        assert event["$user_id"] == "42"
+        assert event["$sent_at"] == "2026-09-14T10:00:00Z"
+        assert "$email" not in event
+        # Nested, so a property named `plan` is not read as a trait.
+        assert event["$properties"] == {"source": "hubspot", "plan": "not-identity"}
+
+    def test_milestone_for_lead_by_email(self):
+        self.ripples.milestone("demo_requested", email="  Jane@Example.com ")
+        event = self.ripples._queue[0]
+        assert event["$email"] == "Jane@Example.com"
+        assert "$user_id" not in event
+        assert "$properties" not in event
+
+    def test_milestone_takes_the_bound_visitor(self):
+        set_visitor_id(VID)
+        self.ripples.milestone("onboarding_completed")
+        assert self.ripples._queue[0]["$visitor_id"] == VID
+
+    def test_milestone_naming_nobody_is_not_sent(self):
+        self.ripples.milestone("mql")
+        self.ripples.milestone("mql", visitor_id="not-a-uuid")
+        assert self.ripples._queue == []
+        assert len(self.errors) == 2
+        assert isinstance(self.errors[0], RipplesError)
+
+    def test_milestone_with_invalid_name_is_not_sent(self):
+        self.ripples.milestone("Demo Requested", "42")
+        self.ripples.milestone("mql\n", "42")
+        assert self.ripples._queue == []
+        assert len(self.errors) == 2
